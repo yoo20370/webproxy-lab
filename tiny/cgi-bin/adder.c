@@ -5,7 +5,7 @@
 #include "csapp.h"
 
 int main(void) {
-  char *buf, *p; 
+  char *buf, *p, *p1, *p2; 
   char arg1[MAXLINE], arg2[MAXLINE], content[MAXLINE];
   int n1 = 0, n2 = 0;
 
@@ -13,7 +13,15 @@ int main(void) {
     p = strchr(buf, '&');
     *p = '\0';
     strcpy(arg1, buf);
+    // arg1에는 n1=123
     strcpy(arg2, p+1);
+    // arg2에는 n2=123 들어 있음 
+    p1 = strchr(arg1, '=');
+    p2 = strchr(arg2, '=');
+    strcpy(arg1, p1 + 1);
+    strcpy(arg2, p2 + 1);
+
+    //printf("출력해보기 %s %s", arg1, arg2);
     n1 = atoi(arg1);
     n2 = atoi(arg2);
   }

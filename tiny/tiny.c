@@ -7,13 +7,14 @@
  *   - Fixed sprintf() aliasing issue in serve_static(), and clienterror().
  */
 #include "csapp.h"
+#include <stdlib.h>
 
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
 int parse_uri(char *uri, char *filename, char *cgiargs);
-void serve_static(int fd, char *filename, int filesize);
+void serve_static(int fd, char *filename, int filesize, char* method);
 void get_filetype(char *filename, char *filetype);
-void serve_dynamic(int fd, char *filename, char *cgiargs);
+void serve_dynamic(int fd, char *filename, char *cgiargs, char* method);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 
@@ -23,16 +24,25 @@ void doit(int fd){
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
     char filename[MAXLINE], cgiargs[MAXLINE];
     rio_t rio;
+    
 
     Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, buf, MAXLINE);
     printf("Request headers:\n");
     printf("%s", buf);
     sscanf(buf, "%s %s %s",method, uri, version);
+    printf("현재 HTTP 버전 %s\n", version);
+
+    // GET이 아닌 경우
     if(strcasecmp(method, "GET")){
-      clienterror(fd, method, "501", "Not implemented", "Tiny does not implment this method");
-      return;
+      // HEAD도 아닌 경우 
+      if(strcasecmp(method, "HEAD")){
+        clienterror(fd, method, "501", "Not implemented", "Tiny does not implment this method");
+        return;
+      }
+      // HEAD인 경우 methodCheck 값 1로 설정
     }
+    
     read_requesthdrs(&rio);
 
     is_static = parse_uri(uri, filename, cgiargs);
@@ -46,13 +56,13 @@ void doit(int fd){
         clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
         return ;
       }
-      serve_static(fd, filename, sbuf.st_size);
+      serve_static(fd, filename, sbuf.st_size, method);
     } else {
       if(!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)){
         clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
         return ;
       }
-      serve_dynamic(fd, filename, cgiargs);
+      serve_dynamic(fd, filename, cgiargs, method);
     }
 }
 
@@ -92,12 +102,12 @@ int parse_uri(char *uri, char *filename, char *cgiargs){
   }
 }
 
-void serve_static(int fd, char *filename, int filesize){
+void serve_static(int fd, char *filename, int filesize, char* method){
   int srcfd;
   char *srcp, filetype[MAXLINE], buf[MAXLINE];
 
   get_filetype(filename, filetype);
-  sprintf(buf, "HTTP/1.0 200 OK\r\n");
+  sprintf(buf, "HTTP/1.1 200 OK\r\n");
   sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
   sprintf(buf, "%sConnection: close\r\n", buf);
   sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
@@ -106,12 +116,37 @@ void serve_static(int fd, char *filename, int filesize){
   printf("Response header:\n");
   printf("%s", buf);
 
+  if(!strcasecmp(method, "HEAD")){
+    return;
+  }
+
   srcfd = Open(filename, O_RDONLY, 0);
   srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
   Close(srcfd);
   Rio_writen(fd, srcp, filesize);
   Munmap(srcp, filesize);
 }
+
+// void serve_static(int fd, char *filename, int filesize){
+//   int srcfd;
+//   char *srcp, filetype[MAXLINE], buf[MAXLINE];
+
+//   get_filetype(filename, filetype);
+//   sprintf(buf, "HTTP/1.1 200 OK\r\n");
+//   sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
+//   sprintf(buf, "%sConnection: close\r\n", buf);
+//   sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
+//   sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
+//   Rio_writen(fd, buf, strlen(buf));
+//   printf("Response header:\n");
+//   printf("%s", buf);
+
+//   srcfd = Open(filename, O_RDONLY, 0);
+//   srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+//   Close(srcfd);
+//   Rio_writen(fd, srcp, filesize);
+//   Munmap(srcp, filesize);
+// }
 
 void get_filetype(char *filename, char *filetype){
 
@@ -123,19 +158,24 @@ void get_filetype(char *filename, char *filetype){
     strcpy(filetype, "image/png");
   } else if (strstr(filename, ".jpg")){
     strcpy(filetype, "image/jpeg");
+  } else if (strstr(filename, ".mpg") || strstr(filename, ".mp4")){
+    strcpy(filetype, "video/mp4");
   } else {
     strcpy(filetype, "text/plain");
   }
-
 }
 
-void serve_dynamic(int fd, char *filename, char *cgiargs){
+void serve_dynamic(int fd, char *filename, char *cgiargs, char* method){
   char buf[MAXLINE], *emptylist[] = { NULL };
 
-  sprintf(buf, "HTTP/1.0 200 OK\r\n");
+  sprintf(buf, "HTTP/1.1 200 OK\r\n");
   Rio_writen(fd, buf, strlen(buf));
   sprintf(buf, "Server: Tiny Web Server\r\n");
   Rio_writen(fd, buf, strlen(buf));
+
+  if(!strcasecmp(method, "HEAD")){
+    return;
+  }
 
   if(Fork() == 0){
     setenv("QUERY_STRING", cgiargs, 1);
@@ -154,7 +194,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
   sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
   sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
 
-  sprintf(buf, "HTTP/1.0 %s %s \r\n", errnum, shortmsg);
+  sprintf(buf, "HTTP/1.1 %s %s \r\n", errnum, shortmsg);
   Rio_writen(fd, buf, strlen(buf));
   sprintf(buf, "Content-type: text/html\r\n");
   Rio_writen(fd, buf, strlen(buf));
