@@ -32,6 +32,7 @@ void doit(int fd){
     printf("%s", buf);
     sscanf(buf, "%s %s %s",method, uri, version);
     printf("현재 HTTP 버전 %s\n", version);
+    printf("현재 URI %s\n",uri);
 
     // GET이 아닌 경우
     if(strcasecmp(method, "GET")){
@@ -121,32 +122,21 @@ void serve_static(int fd, char *filename, int filesize, char* method){
   }
 
   srcfd = Open(filename, O_RDONLY, 0);
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+
+  
+  // 할당된 메모리에 파일 데이터 저장 
+  
+  //srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  // 동적 메모리 할당 
+  srcp = (char*) malloc(filesize);
+  
+  rio_readn(srcfd, srcp, filesize);
   Close(srcfd);
-  Rio_writen(fd, srcp, filesize);
-  Munmap(srcp, filesize);
+  rio_writen(fd, srcp, filesize);
+  free(srcp);
+  srcp = 0;
+  //Munmap(srcp, filesize);
 }
-
-// void serve_static(int fd, char *filename, int filesize){
-//   int srcfd;
-//   char *srcp, filetype[MAXLINE], buf[MAXLINE];
-
-//   get_filetype(filename, filetype);
-//   sprintf(buf, "HTTP/1.1 200 OK\r\n");
-//   sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
-//   sprintf(buf, "%sConnection: close\r\n", buf);
-//   sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
-//   sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
-//   Rio_writen(fd, buf, strlen(buf));
-//   printf("Response header:\n");
-//   printf("%s", buf);
-
-//   srcfd = Open(filename, O_RDONLY, 0);
-//   srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-//   Close(srcfd);
-//   Rio_writen(fd, srcp, filesize);
-//   Munmap(srcp, filesize);
-// }
 
 void get_filetype(char *filename, char *filetype){
 
@@ -211,7 +201,7 @@ int main(int argc, char **argv) {
   struct sockaddr_storage clientaddr;
 
   /* Check command line args */
-  if (argc != 2) {
+  if (argc != 2){
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
     exit(1);
   }
