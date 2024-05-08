@@ -129,7 +129,6 @@ void serve_static(int fd, char *filename, int filesize, char* method){
   //srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
   // 동적 메모리 할당 
   srcp = (char*) malloc(filesize);
-  
   rio_readn(srcfd, srcp, filesize);
   Close(srcfd);
   rio_writen(fd, srcp, filesize);
