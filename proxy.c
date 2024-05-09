@@ -19,6 +19,7 @@ void get_filetype(char *filename, char *filetype);
 void serve_dynamic(int fd, char *filename, char *cgiargs, char *method);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
+void *thread(void *vargp);
 
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3)Gecko/20120305 Firefox/10.0.3\r\n";
 
@@ -57,8 +58,8 @@ void doit(int clientfd)
 
 
   // 프록시 서버와 엔드 서버 연결
-  //serverfd = Open_clientfd("localhost", "8080");
-  serverfd = Open_clientfd(hostname, port);
+  serverfd = Open_clientfd("localhost", "8080");
+  //serverfd = Open_clientfd(hostname, port);
   printf("%s\n", request_buf);
 
   // 서버에 요청 전송 
@@ -131,12 +132,22 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
   Rio_writen(fd, body, strlen(body));
 }
 
+void *thread(void *vargp) {
+    int clientfd = *((int *) vargp);
+    Pthread_detach(pthread_self());
+    Free(vargp);
+    doit(clientfd);
+    Close(clientfd);
+    return NULL;
+}
+
 int main(int argc, char **argv)
 {
-  int listenfd, connfd;
+  int listenfd, *connfd;
   char hostname[MAXLINE], port[MAXLINE];
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
+  pthread_t tid;
 
   /* Check command line args */
   if (argc != 2)
@@ -145,15 +156,20 @@ int main(int argc, char **argv)
     exit(1);
   }
 
+  signal(SIGPIPE, SIG_IGN);
+
   listenfd = Open_listenfd(argv[1]);
   while (1)
   {
     clientlen = sizeof(clientaddr);
-    connfd = Accept(listenfd, (SA *)&clientaddr,
-                    &clientlen); // line:netp:tiny:accept
+    // connfd = Accept(listenfd, (SA *)&clientaddr,
+    //                 &clientlen); 
+    connfd = Malloc(sizeof(int));
+    *connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen); 
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
-    doit(connfd);  // line:netp:tiny:doit
-    Close(connfd); // line:netp:tiny:close
+    Pthread_create(&tid, NULL, thread, connfd);
+    // doit(connfd);  
+    // Close(connfd); 
   }
 }
